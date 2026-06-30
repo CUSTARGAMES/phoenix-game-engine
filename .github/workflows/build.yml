@@ -1,40 +1,34 @@
 # .github/workflows/build.yml
-name: Build Game EXE
+name: Build Windows EXE
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build Windows EXE
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
-    - name: Setup MinGW
-      uses: egor-tensin/setup-mingw@v2
-      with:
-        platform: x64
-    
-    - name: Install dependencies (MSYS2)
+    - name: Install MinGW
       run: |
-        pacman -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-glfw mingw-w64-x86_64-glew
+        sudo apt update
+        sudo apt install -y gcc-mingw-w64-x86-64
     
-    - name: Compile with GCC
+    - name: Compile EXE
       run: |
-        gcc --version
-        gcc game.c -o game.exe -lglfw3 -lglew32 -lopengl32 -lgdi32 -lm -static
-        ls -lh game.exe
+        x86_64-w64-mingw32-gcc \
+          game.c \
+          -o game.exe \
+          -static \
+          -lglfw3 -lglew32 -lopengl32 -lgdi32 -lm \
+          -O2
     
     - name: Upload EXE
       uses: actions/upload-artifact@v4
       with:
-        name: 3d-game
+        name: game.exe
         path: game.exe
-        retention-days: 30
