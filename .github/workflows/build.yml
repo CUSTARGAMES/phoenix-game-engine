@@ -1,9 +1,9 @@
-# .github/workflows/build-simple.yml
+# .github/workflows/build.yml
 name: Build Windows EXE
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -13,24 +13,32 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install MinGW and libraries
+    - name: Install MinGW cross-compiler
       run: |
         sudo apt update
-        sudo apt install -y \
-          gcc-mingw-w64-x86-64 \
-          mingw-w64-x86-64-dev
+        sudo apt install -y gcc-mingw-w64-x86-64
     
-    - name: Install Windows GLFW and GLEW
+    - name: Download GLFW for Windows
       run: |
-        sudo apt install -y \
-          mingw-w64-x86-64-glfw \
-          mingw-w64-x86-64-glew
+        wget https://github.com/glfw/glfw/releases/download/3.3.8/glfw-3.3.8.bin.WIN64.zip
+        unzip glfw-3.3.8.bin.WIN64.zip
+        ls -la glfw-3.3.8.bin.WIN64/
     
-    - name: Compile
+    - name: Download GLEW for Windows
+      run: |
+        wget https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0-win32.zip
+        unzip glew-2.2.0-win32.zip
+        ls -la glew-2.2.0/
+    
+    - name: Compile to EXE
       run: |
         x86_64-w64-mingw32-gcc \
           game.c \
           -o game.exe \
+          -I glfw-3.3.8.bin.WIN64/include \
+          -I glew-2.2.0/include \
+          -L glfw-3.3.8.bin.WIN64/lib-mingw-w64 \
+          -L glew-2.2.0/lib/Release/x64 \
           -static \
           -lglfw3 \
           -lglew32 \
@@ -39,7 +47,7 @@ jobs:
           -lm \
           -O2
     
-    - name: Upload
+    - name: Upload EXE
       uses: actions/upload-artifact@v4
       with:
         name: game.exe
