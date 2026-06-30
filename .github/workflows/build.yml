@@ -1,9 +1,9 @@
-# .github/workflows/build.yml
-name: Build Windows EXE
+# .github/workflows/build-package.yml
+name: Build Windows EXE with DLLs
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -13,33 +13,30 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install MinGW cross-compiler
+    - name: Install MinGW
       run: |
         sudo apt update
         sudo apt install -y gcc-mingw-w64-x86-64
     
-    - name: Download GLFW for Windows
+    - name: Download GLFW
       run: |
         wget https://github.com/glfw/glfw/releases/download/3.3.8/glfw-3.3.8.bin.WIN64.zip
         unzip glfw-3.3.8.bin.WIN64.zip
-        ls -la glfw-3.3.8.bin.WIN64/
     
-    - name: Download GLEW for Windows
+    - name: Download GLEW
       run: |
         wget https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0-win32.zip
         unzip glew-2.2.0-win32.zip
-        ls -la glew-2.2.0/
     
-    - name: Compile to EXE
+    - name: Compile
       run: |
         x86_64-w64-mingw32-gcc \
           game.c \
           -o game.exe \
-          -I glfw-3.3.8.bin.WIN64/include \
           -I glew-2.2.0/include \
-          -L glfw-3.3.8.bin.WIN64/lib-mingw-w64 \
+          -I glfw-3.3.8.bin.WIN64/include \
           -L glew-2.2.0/lib/Release/x64 \
-          -static \
+          -L glfw-3.3.8.bin.WIN64/lib-mingw-w64 \
           -lglfw3 \
           -lglew32 \
           -lopengl32 \
@@ -47,8 +44,27 @@ jobs:
           -lm \
           -O2
     
-    - name: Upload EXE
+    - name: Copy DLLs
+      run: |
+        # Create package folder
+        mkdir package
+        
+        # Copy EXE
+        cp game.exe package/
+        
+        # Copy DLLs
+        cp glew-2.2.0/bin/Release/x64/glew32.dll package/
+        cp glfw-3.3.8.bin.WIN64/lib-mingw-w64/libglfw3.dll package/ || echo "No GLFW DLL found"
+        
+        # Create README
+        echo "Run game.exe" > package/README.txt
+        
+        # Zip everything
+        cd package
+        zip -r ../3d-game-windows.zip *
+    
+    - name: Upload ZIP package
       uses: actions/upload-artifact@v4
       with:
-        name: game.exe
-        path: game.exe
+        name: 3d-game-windows
+        path: 3d-game-windows.zip
