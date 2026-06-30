@@ -1,0 +1,58 @@
+# .github/workflows/build-standalone.yml
+name: Build Standalone EXE
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup MSYS2 with MinGW
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        install: |
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-glfw
+          mingw-w64-x86_64-glew
+    
+    - name: Build Standalone EXE
+      shell: msys2 {0}
+      run: |
+        # Static linking - creates standalone EXE
+        gcc game.c -o game.exe \
+          -static \
+          -static-libgcc \
+          -static-libstdc++ \
+          -lglfw3 \
+          -lglew32 \
+          -lopengl32 \
+          -lgdi32 \
+          -lm \
+          -Wall -Wextra -O2
+        
+        # Verify EXE
+        file game.exe
+        ls -lh game.exe
+    
+    - name: Upload EXE
+      uses: actions/upload-artifact@v4
+      with:
+        name: 3d-game-standalone
+        path: game.exe
+        
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: game.exe
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
