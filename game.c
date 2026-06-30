@@ -1,5 +1,5 @@
-// game.c - Complete 3D Driving Game with Physics
-// Compile: gcc game.c -o game.exe -static -lglfw3 -lglew32 -lopengl32 -lgdi32 -lm
+// game.c - Fixed version with correct GLEW initialization
+// Compile: gcc game.c -o game.exe -lglfw3 -lglew32 -lopengl32 -lgdi32 -lm -static
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -23,7 +23,6 @@ Vec3 vec3_scale(Vec3 v, float s) { return vec3(v.x*s, v.y*s, v.z*s); }
 Vec3 vec3_normalize(Vec3 v) { float l = sqrt(v.x*v.x+v.y*v.y+v.z*v.z); return l>0?vec3(v.x/l,v.y/l,v.z/l):vec3(0,0,0); }
 float vec3_dot(Vec3 a, Vec3 b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
 Vec3 vec3_cross(Vec3 a, Vec3 b) { return vec3(a.y*b.z-a.z*b.y, a.z*b.x-a.x*b.z, a.x*b.y-a.y*b.x); }
-float vec3_dist(Vec3 a, Vec3 b) { return sqrt(pow(a.x-b.x,2)+pow(a.y-b.y,2)+pow(a.z-b.z,2)); }
 
 // ========== STRUCTURES ==========
 typedef struct { float pos[3]; float normal[3]; float uv[2]; } Vertex;
@@ -49,86 +48,6 @@ typedef struct {
     float speed, max_speed, acceleration, braking, turn_speed;
     float mass;
 } Car;
-
-// ========== PHYSICS ENGINE ==========
-typedef struct {
-    Vec3 pos;
-    Vec3 size;
-    bool is_static;
-    Vec3 velocity;
-    float mass;
-} PhysicsBody;
-
-PhysicsBody physics_bodies[100];
-int physics_body_count = 0;
-
-void physics_add_body(PhysicsBody body) {
-    if (physics_body_count < 100) {
-        physics_bodies[physics_body_count++] = body;
-    }
-}
-
-bool physics_check_collision(PhysicsBody a, PhysicsBody b) {
-    return (fabs(a.pos.x - b.pos.x) < (a.size.x/2 + b.size.x/2) &&
-            fabs(a.pos.y - b.pos.y) < (a.size.y/2 + b.size.y/2) &&
-            fabs(a.pos.z - b.pos.z) < (a.size.z/2 + b.size.z/2));
-}
-
-void physics_resolve_collision(PhysicsBody* a, PhysicsBody* b) {
-    Vec3 overlap = vec3(
-        (a->size.x/2 + b->size.x/2) - fabs(a->pos.x - b->pos.x),
-        (a->size.y/2 + b->size.y/2) - fabs(a->pos.y - b->pos.y),
-        (a->size.z/2 + b->size.z/2) - fabs(a->pos.z - b->pos.z)
-    );
-    
-    // Push apart
-    if (overlap.x < overlap.y && overlap.x < overlap.z) {
-        float sign = (a->pos.x < b->pos.x) ? -1 : 1;
-        a->pos.x += sign * overlap.x * 0.5f;
-        a->velocity.x = 0;
-    } else if (overlap.y < overlap.x && overlap.y < overlap.z) {
-        float sign = (a->pos.y < b->pos.y) ? -1 : 1;
-        a->pos.y += sign * overlap.y * 0.5f;
-        a->velocity.y = 0;
-    } else {
-        float sign = (a->pos.z < b->pos.z) ? -1 : 1;
-        a->pos.z += sign * overlap.z * 0.5f;
-        a->velocity.z = 0;
-    }
-}
-
-void update_car_physics(Car* car, float dt, PhysicsBody* obstacles, int obstacle_count) {
-    // Gravity
-    car->velocity.y -= 9.8f * dt;
-    
-    // Apply velocity
-    car->pos.x += car->velocity.x * dt;
-    car->pos.y += car->velocity.y * dt;
-    car->pos.z += car->velocity.z * dt;
-    
-    // Ground collision
-    if (car->pos.y < 0.5f) {
-        car->pos.y = 0.5f;
-        car->velocity.y = 0;
-    }
-    
-    // World bounds
-    if (car->pos.x > WORLD_SIZE-2) { car->pos.x = WORLD_SIZE-2; car->velocity.x = 0; }
-    if (car->pos.x < -WORLD_SIZE+2) { car->pos.x = -WORLD_SIZE+2; car->velocity.x = 0; }
-    if (car->pos.z > WORLD_SIZE-2) { car->pos.z = WORLD_SIZE-2; car->velocity.z = 0; }
-    if (car->pos.z < -WORLD_SIZE+2) { car->pos.z = -WORLD_SIZE+2; car->velocity.z = 0; }
-    
-    // Obstacle collision
-    PhysicsBody car_body = {car->pos, vec3(1.0f, 0.5f, 0.8f), false, {0,0,0}, 1.0f};
-    for (int i = 0; i < obstacle_count; i++) {
-        if (physics_check_collision(car_body, obstacles[i])) {
-            physics_resolve_collision(&car_body, &obstacles[i]);
-            car->pos = car_body.pos;
-            car->velocity.x *= 0.5f;
-            car->velocity.z *= 0.5f;
-        }
-    }
-}
 
 // ========== SHADERS ==========
 const char* vertex_shader =
@@ -228,15 +147,12 @@ void create_plane_mesh(Mesh* m, float size) {
 }
 
 void create_car_mesh(Mesh* m) {
-    // Simple car using triangles directly
     Vertex verts[200]; int vc = 0;
     unsigned int indices[300]; int ic = 0;
     
-    // Car body (simplified)
     float body_w = 0.9f, body_h = 0.3f, body_d = 0.5f;
     float cabin_w = 0.7f, cabin_h = 0.25f, cabin_d = 0.3f;
     
-    // Body vertices (box)
     Vec3 p[8] = {
         vec3(-body_w, -body_h/2, -body_d),
         vec3(body_w, -body_h/2, -body_d),
@@ -248,8 +164,7 @@ void create_car_mesh(Mesh* m) {
         vec3(-body_w, body_h/2, body_d)
     };
     
-    // Add box function
-    void add_quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, Vec3 normal, float r, float g, float bl) {
+    void add_quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, Vec3 normal) {
         Vertex v[4] = {
             {{a.x,a.y,a.z},{normal.x,normal.y,normal.z},{0,0}},
             {{b.x,b.y,b.z},{normal.x,normal.y,normal.z},{1,0}},
@@ -265,21 +180,18 @@ void create_car_mesh(Mesh* m) {
         indices[ic++] = base; indices[ic++] = base+2; indices[ic++] = base+3;
     }
     
-    // Body faces
     Vec3 normals[6] = {
         {0,0,-1},{0,0,1},{0,-1,0},{0,1,0},{-1,0,0},{1,0,0}
     };
     int face_inds[6][4] = {{0,1,2,3},{4,5,6,7},{0,1,5,4},{2,3,7,6},{0,3,7,4},{1,2,6,5}};
-    float color = 0.8f;
     for (int f = 0; f < 6; f++) {
         Vec3 a = p[face_inds[f][0]];
         Vec3 b = p[face_inds[f][1]];
         Vec3 c = p[face_inds[f][2]];
         Vec3 d = p[face_inds[f][3]];
-        add_quad(a,b,c,d,normals[f],color,0.2f,0.1f);
+        add_quad(a,b,c,d,normals[f]);
     }
     
-    // Cabin (simple box on top)
     Vec3 cp[8] = {
         vec3(-cabin_w, body_h/2, -cabin_d),
         vec3(cabin_w, body_h/2, -cabin_d),
@@ -296,7 +208,7 @@ void create_car_mesh(Mesh* m) {
         Vec3 b = cp[face_inds2[f][1]];
         Vec3 c = cp[face_inds2[f][2]];
         Vec3 d = cp[face_inds2[f][3]];
-        add_quad(a,b,c,d,normals[f],0.3f,0.6f,0.9f);
+        add_quad(a,b,c,d,normals[f]);
     }
     
     m->vertex_count = vc; m->index_count = ic;
@@ -314,7 +226,6 @@ void create_car_mesh(Mesh* m) {
 }
 
 void create_tree_mesh(Mesh* m) {
-    // Tree trunk (box)
     Vertex verts[200]; int vc = 0;
     unsigned int indices[300]; int ic = 0;
     
@@ -329,7 +240,7 @@ void create_tree_mesh(Mesh* m) {
         vec3(-0.1f, 0.5f, 0.1f)
     };
     
-    void add_quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, Vec3 normal, float r, float g, float bl) {
+    void add_quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, Vec3 normal) {
         Vertex v[4] = {
             {{a.x,a.y,a.z},{normal.x,normal.y,normal.z},{0,0}},
             {{b.x,b.y,b.z},{normal.x,normal.y,normal.z},{1,0}},
@@ -354,10 +265,9 @@ void create_tree_mesh(Mesh* m) {
         Vec3 b = p[face_inds[f][1]];
         Vec3 c = p[face_inds[f][2]];
         Vec3 d = p[face_inds[f][3]];
-        add_quad(a,b,c,d,normals[f],0.4f,0.3f,0.1f);
+        add_quad(a,b,c,d,normals[f]);
     }
     
-    // Canopy (sphere approximation - just a box for simplicity)
     Vec3 cp[8] = {
         vec3(-0.4f, 0.5f, -0.4f),
         vec3(0.4f, 0.5f, -0.4f),
@@ -373,7 +283,7 @@ void create_tree_mesh(Mesh* m) {
         Vec3 b = cp[face_inds[f][1]];
         Vec3 c = cp[face_inds[f][2]];
         Vec3 d = cp[face_inds[f][3]];
-        add_quad(a,b,c,d,normals[f],0.1f,0.6f,0.1f);
+        add_quad(a,b,c,d,normals[f]);
     }
     
     m->vertex_count = vc; m->index_count = ic;
@@ -488,7 +398,7 @@ void update_camera(Camera* cam, Car* car) {
 
 // ========== RENDERER ==========
 void render_mesh(Mesh* m, unsigned int shader, float* view, float* proj, Vec3 lightPos, Vec3 viewPos, Vec3 color) {
-    float model[16], temp[16], temp2[16];
+    float model[16], temp[16];
     mat4_identity(model);
     
     float trans[16]; mat4_translate(trans, m->pos);
@@ -531,8 +441,12 @@ int main() {
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1);
     
-    glewExperimental = true;
-    if (glewInit() != GLEW_OK) { printf("Failed to init GLEW\n"); return -1; }
+    // **FIX: Initialize GLEW AFTER creating context**
+    glewExperimental = GL_TRUE;
+    if (glewInit() != GLEW_OK) { 
+        printf("Failed to init GLEW\n"); 
+        return -1; 
+    }
     
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
