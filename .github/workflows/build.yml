@@ -17,29 +17,20 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Setup MSYS2
-      uses: msys2/setup-msys2@v2
+    - name: Setup MinGW
+      uses: egor-tensin/setup-mingw@v2
       with:
-        msystem: MINGW64
-        install: |
-          mingw-w64-x86_64-gcc
-          mingw-w64-x86_64-glfw
-          mingw-w64-x86_64-glew
+        platform: x64
     
-    - name: Compile game
-      shell: msys2 {0}
+    - name: Install dependencies (MSYS2)
       run: |
-        # Fix: Libraries at the END, correct order
-        gcc game.c -o game.exe \
-          -lglfw3 \
-          -lglew32 \
-          -lopengl32 \
-          -lgdi32 \
-          -lm \
-          -static
-        
-        # Verify EXE exists
-        ls -lh game.exe || echo "Build failed!"
+        pacman -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-x86_64-glfw mingw-w64-x86_64-glew
+    
+    - name: Compile with GCC
+      run: |
+        gcc --version
+        gcc game.c -o game.exe -lglfw3 -lglew32 -lopengl32 -lgdi32 -lm -static
+        ls -lh game.exe
     
     - name: Upload EXE
       uses: actions/upload-artifact@v4
