@@ -1,5 +1,5 @@
-# .github/workflows/build-cmake.yml
-name: Build with CMake
+# .github/workflows/build-simple.yml
+name: Build Windows EXE
 
 on:
   push:
@@ -13,24 +13,34 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install MinGW
+    - name: Install MinGW and libraries
       run: |
         sudo apt update
-        sudo apt install -y gcc-mingw-w64-x86-64 cmake
+        sudo apt install -y \
+          gcc-mingw-w64-x86-64 \
+          mingw-w64-x86-64-dev
     
-    - name: Configure with CMake
+    - name: Install Windows GLFW and GLEW
       run: |
-        mkdir build
-        cd build
-        cmake -DCMAKE_TOOLCHAIN_FILE=/usr/share/mingw-w64/Toolchain-mingw-x86_64.cmake ..
+        sudo apt install -y \
+          mingw-w64-x86-64-glfw \
+          mingw-w64-x86-64-glew
     
-    - name: Build
+    - name: Compile
       run: |
-        cd build
-        make
+        x86_64-w64-mingw32-gcc \
+          game.c \
+          -o game.exe \
+          -static \
+          -lglfw3 \
+          -lglew32 \
+          -lopengl32 \
+          -lgdi32 \
+          -lm \
+          -O2
     
     - name: Upload
       uses: actions/upload-artifact@v4
       with:
         name: game.exe
-        path: build/game.exe
+        path: game.exe
