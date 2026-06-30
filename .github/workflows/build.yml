@@ -1,5 +1,5 @@
-# .github/workflows/build.yml
-name: Build Windows EXE
+# .github/workflows/build-cmake.yml
+name: Build with CMake
 
 on:
   push:
@@ -16,19 +16,21 @@ jobs:
     - name: Install MinGW
       run: |
         sudo apt update
-        sudo apt install -y gcc-mingw-w64-x86-64
+        sudo apt install -y gcc-mingw-w64-x86-64 cmake
     
-    - name: Compile EXE
+    - name: Configure with CMake
       run: |
-        x86_64-w64-mingw32-gcc \
-          game.c \
-          -o game.exe \
-          -static \
-          -lglfw3 -lglew32 -lopengl32 -lgdi32 -lm \
-          -O2
+        mkdir build
+        cd build
+        cmake -DCMAKE_TOOLCHAIN_FILE=/usr/share/mingw-w64/Toolchain-mingw-x86_64.cmake ..
     
-    - name: Upload EXE
+    - name: Build
+      run: |
+        cd build
+        make
+    
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
         name: game.exe
-        path: game.exe
+        path: build/game.exe
