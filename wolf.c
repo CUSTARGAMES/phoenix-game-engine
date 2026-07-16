@@ -1,4 +1,4 @@
-// wolf.c - Wolfenstein 3D Style Raycaster
+// wolf.c - Wolfenstein 3D Style Raycaster (FIXED)
 // Compile: gcc wolf.c -o wolf.exe -lm -O2 -mwindows -static
 
 #include <stdio.h>
@@ -59,7 +59,7 @@ Player player = {
     100, 50, 0, 0
 };
 
-// ========== ENEMIES (Simple) ==========
+// ========== ENEMIES ==========
 typedef struct {
     float x, y;
     int health;
@@ -83,16 +83,14 @@ typedef struct {
 Bullet bullets[MAX_BULLETS];
 
 // ========== SPRITES ==========
-unsigned int* hand_sprite = NULL;
-unsigned int* hand2_sprite = NULL;
-int hand_w = 128, hand_h = 128;
+unsigned int* screen_buffer = NULL;
 
 // ========== WINDOW ==========
-unsigned int* screen_buffer;
 HWND hwnd;
 HDC hdc;
 HBITMAP hBitmap;
 BITMAPINFO bmi;
+int window_width, window_height;
 
 // ========== TIMING ==========
 double get_time() {
@@ -100,111 +98,6 @@ double get_time() {
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&count);
     return (double)count.QuadPart / freq.QuadPart;
-}
-
-// ========== LOAD BMP ==========
-unsigned int* load_bmp(const char* fname, int* width, int* height) {
-    FILE* f = fopen(fname, "rb");
-    if (!f) return NULL;
-    
-    unsigned char header[54];
-    if (fread(header, 1, 54, f) != 54) { fclose(f); return NULL; }
-    
-    if (header[0] != 'B' || header[1] != 'M') { fclose(f); return NULL; }
-    
-    int w = *(int*)&header[18];
-    int h = *(int*)&header[22];
-    int bpp = *(short*)&header[28];
-    int data_offset = *(int*)&header[10];
-    
-    if (bpp != 24 && bpp != 32) { fclose(f); return NULL; }
-    
-    fseek(f, data_offset, SEEK_SET);
-    
-    int bytes_per_pixel = bpp / 8;
-    int stride = w * bytes_per_pixel;
-    int padding = (4 - (stride % 4)) % 4;
-    
-    unsigned int* data = malloc(w * h * 4);
-    if (!data) { fclose(f); return NULL; }
-    
-    for (int y = h-1; y >= 0; y--) {
-        for (int x = 0; x < w; x++) {
-            unsigned char b, g, r, a = 255;
-            fread(&b, 1, 1, f);
-            fread(&g, 1, 1, f);
-            fread(&r, 1, 1, f);
-            if (bytes_per_pixel == 4) fread(&a, 1, 1, f);
-            data[y * w + x] = (a << 24) | (r << 16) | (g << 8) | b;
-        }
-        fseek(f, padding, SEEK_CUR);
-    }
-    
-    fclose(f);
-    *width = w;
-    *height = h;
-    return data;
-}
-
-// ========== CREATE DEFAULT SPRITES ==========
-unsigned int* create_hand_sprite(int is_shooting, int* w, int* h) {
-    *w = 128; *h = 128;
-    unsigned int* data = malloc(128 * 128 * 4);
-    if (!data) return NULL;
-    
-    for (int y = 0; y < 128; y++) {
-        for (int x = 0; x < 128; x++) {
-            unsigned int color = 0;
-            int alpha = 0;
-            
-            // Hand shape (simple)
-            if (x > 20 && x < 100 && y > 50 && y < 90) {
-                // Skin color
-                int r = 200, g = 150, b = 100;
-                alpha = 255;
-                color = (alpha << 24) | (r << 16) | (g << 8) | b;
-            }
-            
-            // Fingers
-            if ((x > 25 && x < 40 && y > 25 && y < 55) ||
-                (x > 45 && x < 60 && y > 25 && y < 55) ||
-                (x > 65 && x < 80 && y > 25 && y < 55)) {
-                alpha = 255;
-                color = (alpha << 24) | (200 << 16) | (150 << 8) | 100;
-            }
-            
-            // Gun
-            if (x > 70 && x < 120 && y > 60 && y < 68) {
-                alpha = 255;
-                color = (alpha << 24) | (60 << 16) | (60 << 8) | 60;
-            }
-            if (x > 70 && x < 120 && y > 68 && y < 75) {
-                alpha = 255;
-                color = (alpha << 24) | (100 << 16) | (100 << 8) | 100;
-            }
-            
-            // Trigger guard
-            if (x > 65 && x < 75 && y > 85 && y < 95) {
-                alpha = 255;
-                color = (alpha << 24) | (100 << 16) | (80 << 8) | 60;
-            }
-            
-            // Muzzle flash (shooting)
-            if (is_shooting && x > 115 && x < 130 && y > 60 && y < 80) {
-                // Yellow flash with glow
-                int dist = abs(x - 122) + abs(y - 70);
-                if (dist < 15) {
-                    alpha = 255;
-                    int brightness = 255 - dist * 10;
-                    if (brightness < 0) brightness = 0;
-                    color = (alpha << 24) | (255 << 16) | (brightness << 8) | (brightness / 2);
-                }
-            }
-            
-            data[y * 128 + x] = color;
-        }
-    }
-    return data;
 }
 
 // ========== SHOOTING ==========
@@ -392,8 +285,44 @@ void render_sprite(float x, float y, unsigned int color, float size) {
     }
 }
 
+// ========== DRAW HAND ==========
+void draw_hand(int shooting) {
+    // Draw simple hand/gun at bottom right
+    int hx = SCREEN_W - 100;
+    int hy = SCREEN_H - 120;
+    
+    // Gun body
+    for (int y = 0; y < 80; y++) {
+        for (int x = 0; x < 60; x++) {
+            int px = hx + x;
+            int py = hy + y;
+            if (px >= SCREEN_W || py >= SCREEN_H) continue;
+            
+            // Gun shape
+            if (x > 10 && x < 50 && y > 20 && y < 35) {
+                screen_buffer[py * SCREEN_W + px] = 0xFF444444;
+            }
+            if (x > 10 && x < 50 && y > 35 && y < 45) {
+                screen_buffer[py * SCREEN_W + px] = 0xFF666666;
+            }
+            // Handle
+            if (x > 5 && x < 25 && y > 50 && y < 75) {
+                screen_buffer[py * SCREEN_W + px] = 0xFF885522;
+            }
+            // Muzzle flash (shooting)
+            if (shooting && x > 45 && x < 60 && y > 20 && y < 45) {
+                int flash = 255 - (x - 45) * 10;
+                if (flash < 0) flash = 0;
+                screen_buffer[py * SCREEN_W + px] = (0xFF << 24) | (255 << 16) | (flash << 8) | (flash / 2);
+            }
+        }
+    }
+}
+
 // ========== RENDER ==========
 void render_frame() {
+    if (!screen_buffer) return;
+    
     memset(screen_buffer, 0, SCREEN_W * SCREEN_H * 4);
     
     // Cast rays and draw walls
@@ -417,10 +346,10 @@ void render_frame() {
             // Wall color based on map value
             int wall_type = map[map_x][map_y];
             switch(wall_type) {
-                case 1: color = (side == 0) ? 0xFF4488FF : 0xFF3366CC; break;  // Blue
-                case 2: color = (side == 0) ? 0xFF44CC44 : 0xFF22AA22; break;  // Green
-                case 3: color = (side == 0) ? 0xFFFF4444 : 0xFFCC2222; break;  // Red
-                case 4: color = (side == 0) ? 0xFFFFCC44 : 0xFFCC9922; break;  // Yellow
+                case 1: color = (side == 0) ? 0xFF4488FF : 0xFF3366CC; break;
+                case 2: color = (side == 0) ? 0xFF44CC44 : 0xFF22AA22; break;
+                case 3: color = (side == 0) ? 0xFFFF4444 : 0xFFCC2222; break;
+                case 4: color = (side == 0) ? 0xFFFFCC44 : 0xFFCC9922; break;
                 default: color = 0xFFFF00FF; break;
             }
             
@@ -478,25 +407,8 @@ void render_frame() {
         render_sprite(bullets[i].x, bullets[i].y, 0xFFFFFF00, 0.1f);
     }
     
-    // Draw hand sprite
-    unsigned int* hand = (player.shooting) ? hand2_sprite : hand_sprite;
-    if (hand) {
-        int sx = SCREEN_W - 128 - 20;
-        int sy = SCREEN_H - 128 - 20;
-        for (int y = 0; y < 128 && y + sy < SCREEN_H; y++) {
-            for (int x = 0; x < 128 && x + sx < SCREEN_W; x++) {
-                unsigned int color = hand[y * 128 + x];
-                unsigned char alpha = (color >> 24) & 0xFF;
-                if (alpha == 0) continue;
-                screen_buffer[(sy + y) * SCREEN_W + (sx + x)] = color;
-            }
-        }
-    }
-    
-    // HUD
-    char hud[200];
-    sprintf(hud, "Health: %d  Ammo: %d  Enemies: %d", player.health, player.ammo, num_enemies);
-    TextOut(hdc, 10, 10, hud, strlen(hud));
+    // Draw hand
+    draw_hand(player.shooting);
 }
 
 // ========== INPUT ==========
@@ -554,7 +466,7 @@ void handle_input(float dt) {
     }
 }
 
-// ========== WINDOW ==========
+// ========== WINDOW PROCEDURE ==========
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_KEYDOWN:
@@ -562,6 +474,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         case WM_DESTROY:
             PostQuitMessage(0);
+            break;
+        case WM_PAINT:
+            {
+                PAINTSTRUCT ps;
+                HDC hdc_paint = BeginPaint(hWnd, &ps);
+                if (screen_buffer && hBitmap) {
+                    HDC hdc_mem = CreateCompatibleDC(hdc_paint);
+                    SelectObject(hdc_mem, hBitmap);
+                    BitBlt(hdc_paint, 0, 0, SCREEN_W, SCREEN_H, hdc_mem, 0, 0, SRCCOPY);
+                    DeleteDC(hdc_mem);
+                }
+                EndPaint(hWnd, &ps);
+            }
             break;
         default:
             return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -573,30 +498,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     srand(time(NULL));
     
-    // Load or create sprites
-    hand_sprite = load_bmp("hand.bmp", &hand_w, &hand_h);
-    if (!hand_sprite) {
-        hand_sprite = create_hand_sprite(0, &hand_w, &hand_h);
-        printf("Created default hand.bmp\n");
-    }
-    
-    hand2_sprite = load_bmp("hand2.bmp", &hand_w, &hand_h);
-    if (!hand2_sprite) {
-        hand2_sprite = create_hand_sprite(1, &hand_w, &hand_h);
-        printf("Created default hand2.bmp\n");
-    }
-    
-    // Spawn enemies
-    spawn_enemy(5.0f, 5.0f);
-    spawn_enemy(12.0f, 3.0f);
-    spawn_enemy(8.0f, 15.0f);
-    spawn_enemy(3.0f, 12.0f);
-    spawn_enemy(15.0f, 8.0f);
-    
     // Create window
     WNDCLASS wc = {0};
+    wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.lpszClassName = "Wolf3D";
     RegisterClass(&wc);
     
@@ -604,6 +511,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         100, 100, SCREEN_W + 16, SCREEN_H + 39,
         NULL, NULL, hInstance, NULL);
+    
+    if (!hwnd) return 1;
+    
+    // Get window DC
+    hdc = GetDC(hwnd);
     
     // Create bitmap
     bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
@@ -614,24 +526,40 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     bmi.bmiHeader.biCompression = BI_RGB;
     bmi.bmiHeader.biSizeImage = SCREEN_W * SCREEN_H * 4;
     
-    hdc = GetDC(hwnd);
     hBitmap = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, (void**)&screen_buffer, NULL, 0);
-    SelectObject(hdc, hBitmap);
+    if (!hBitmap) {
+        MessageBox(hwnd, "Failed to create bitmap!", "Error", MB_OK);
+        return 1;
+    }
+    
+    // Create memory DC for double buffering
+    HDC hdc_mem = CreateCompatibleDC(hdc);
+    SelectObject(hdc_mem, hBitmap);
+    
+    // Spawn enemies
+    spawn_enemy(5.0f, 5.0f);
+    spawn_enemy(12.0f, 3.0f);
+    spawn_enemy(8.0f, 15.0f);
+    spawn_enemy(3.0f, 12.0f);
+    spawn_enemy(15.0f, 8.0f);
     
     double last_time = get_time();
     MSG msg;
     
     while (1) {
+        // Handle Windows messages
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) {
                 DeleteObject(hBitmap);
                 ReleaseDC(hwnd, hdc);
+                DeleteDC(hdc_mem);
                 return 0;
             }
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
         
+        // Game loop
         double current_time = get_time();
         float dt = (float)(current_time - last_time);
         if (dt > 0.05f) dt = 0.05f;
@@ -641,8 +569,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             update_bullets(dt);
             update_enemies(dt);
             render_frame();
-            BitBlt(hdc, 0, 0, SCREEN_W, SCREEN_H, hdc, 0, 0, SRCCOPY);
+            
+            // Update display
+            BitBlt(hdc, 0, 0, SCREEN_W, SCREEN_H, hdc_mem, 0, 0, SRCCOPY);
             last_time = current_time;
         }
+        
+        // Small sleep to prevent 100% CPU usage
+        Sleep(1);
     }
+    
+    return 0;
 }
