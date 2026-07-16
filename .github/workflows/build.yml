@@ -10,61 +10,134 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
+   name: Build Wolfenstein Engine
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Windows EXE
+    runs-on: ubuntu-latest
+    
     steps:
     - uses: actions/checkout@v4
     
     - name: Install MinGW
       run: |
-        sudo apt update
-        sudo apt install -y gcc-mingw-w64-x86-64
-    
-    - name: Download GLFW
-      run: |
-        wget https://github.com/glfw/glfw/releases/download/3.3.8/glfw-3.3.8.bin.WIN64.zip
-        unzip glfw-3.3.8.bin.WIN64.zip
-    
-    - name: Download GLEW
-      run: |
-        wget https://github.com/nigels-com/glew/releases/download/glew-2.2.0/glew-2.2.0-win32.zip
-        unzip glew-2.2.0-win32.zip
+        sudo apt-get update
+        sudo apt-get install -y gcc-mingw-w64-x86-64
     
     - name: Compile
       run: |
         x86_64-w64-mingw32-gcc \
-          game.c \
-          -o game.exe \
-          -I glew-2.2.0/include \
-          -I glfw-3.3.8.bin.WIN64/include \
-          -L glew-2.2.0/lib/Release/x64 \
-          -L glfw-3.3.8.bin.WIN64/lib-mingw-w64 \
-          -lglfw3 \
-          -lglew32 \
-          -lopengl32 \
-          -lgdi32 \
+          wolf.c \
+          -o wolf.exe \
+          -static \
+          -O2 \
           -lm \
-          -O2
+          -mwindows \
+          -Wall
+        
+        ls -lh wolf.exe
     
-    - name: Copy DLLs
+    - name: Create default sprites (if missing)
       run: |
-        # Create package folder
-        mkdir package
+        # Create hand.bmp if not in repo
+        if [ ! -f hand.bmp ]; then
+          echo "Creating default hand.bmp..."
+          # Use ImageMagick or Python to create
+          python3 << 'EOF'
+          import struct
+          w, h = 128, 128
+          pixels = bytearray()
+          for y in range(h):
+              for x in range(w):
+                  a, r, g, b = 0, 0, 0, 0
+                  # Simple hand silhouette
+                  if x > 20 and x < 100 and y > 50 and y < 90:
+                      a, r, g, b = 255, 200, 150, 100
+                  if (x > 25 and x < 40 and y > 25 and y < 55) or \
+                     (x > 45 and x < 60 and y > 25 and y < 55) or \
+                     (x > 65 and x < 80 and y > 25 and y < 55):
+                      a, r, g, b = 255, 200, 150, 100
+                  if x > 70 and x < 120 and y > 60 and y < 68:
+                      a, r, g, b = 255, 60, 60, 60
+                  if x > 70 and x < 120 and y > 68 and y < 75:
+                      a, r, g, b = 255, 100, 100, 100
+                  if x > 65 and x < 75 and y > 85 and y < 95:
+                      a, r, g, b = 255, 100, 80, 60
+                  pixels += struct.pack('<BBBB', b, g, r, a)
+          header = bytearray()
+          header += b'BM'
+          header += struct.pack('<I', 54 + len(pixels))
+          header += struct.pack('<I', 0)
+          header += struct.pack('<I', 54)
+          header += struct.pack('<I', 40)
+          header += struct.pack('<I', w)
+          header += struct.pack('<I', h)
+          header += struct.pack('<H', 1)
+          header += struct.pack('<H', 32)
+          header += struct.pack('<I', 0)
+          header += struct.pack('<I', 0)
+          header += struct.pack('<I', 0)
+          header += struct.pack('<I', 0)
+          header += struct.pack('<I', 0)
+          header += struct.pack('<I', 0)
+          with open('hand.bmp', 'wb') as f:
+              f.write(header)
+              f.write(pixels)
+          EOF
+        fi
         
-        # Copy EXE
-        cp game.exe package/
+        # Create hand2.bmp (shooting) if missing
+        if [ ! -f hand2.bmp ]; then
+          cp hand.bmp hand2.bmp
+          # Add muzzle flash (modify hand2.bmp)
+          python3 << 'EOF'
+          # Add yellow flash to hand2.bmp
+          # For simplicity, just copy hand.bmp
+          EOF
+        fi
         
-        # Copy DLLs
-        cp glew-2.2.0/bin/Release/x64/glew32.dll package/
-        cp glfw-3.3.8.bin.WIN64/lib-mingw-w64/libglfw3.dll package/ || echo "No GLFW DLL found"
-        
-        # Create README
-        echo "Run game.exe" > package/README.txt
-        
-        # Zip everything
-        cd package
-        zip -r ../3d-game-windows.zip *
+        ls -lh hand*.bmp
     
-    - name: Upload ZIP package
+    - name: Package
+      run: |
+        mkdir release
+        cp wolf.exe release/
+        cp hand.bmp release/ 2>/dev/null || echo "No hand.bmp"
+        cp hand2.bmp release/ 2>/dev/null || echo "No hand2.bmp"
+        
+        cat > release/README.txt << 'EOF'
+        Wolfenstein 3D Engine
+        
+        Controls:
+        WASD - Move
+        SPACE - Shoot
+        ESC - Exit
+        
+        Walls:
+        1 = Blue
+        2 = Green
+        3 = Red
+        4 = Yellow
+        
+        Edit MAP in wolf.c to create levels!
+        EOF
+        
+        cd release
+        zip -r ../wolf3d-windows.zip *
+        cd ..
+        
+        echo "ZIP contents:"
+        unzip -l wolf3d-windows.zip
+    
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: 3d-game-windows
-        path: 3d-game-windows.zip
+        name: wolf3d-windows
+        path: wolf3d-windows.zip
+        retention-days: 90
