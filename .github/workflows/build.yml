@@ -1,19 +1,9 @@
-# .github/workflows/build-package.yml
-name: Build Windows EXE with DLLs
+name: Build Wolfenstein Engine
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    
-   name: Build Wolfenstein Engine
-
-on:
-  push:
+    branches: [ main, master ]
+  pull_request:
     branches: [ main, master ]
   workflow_dispatch:
 
@@ -23,14 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
     
     - name: Install MinGW
       run: |
         sudo apt-get update
         sudo apt-get install -y gcc-mingw-w64-x86-64
     
-    - name: Compile
+    - name: Compile Wolfenstein Engine
       run: |
         x86_64-w64-mingw32-gcc \
           wolf.c \
@@ -43,90 +34,117 @@ jobs:
         
         ls -lh wolf.exe
     
-    - name: Create default sprites (if missing)
+    - name: Create default sprites
       run: |
-        # Create hand.bmp if not in repo
+        # Create hand.bmp if not exists
         if [ ! -f hand.bmp ]; then
-          echo "Creating default hand.bmp..."
-          # Use ImageMagick or Python to create
-          python3 << 'EOF'
+          python3 << 'PYTHON_SCRIPT'
           import struct
-          w, h = 128, 128
-          pixels = bytearray()
-          for y in range(h):
-              for x in range(w):
-                  a, r, g, b = 0, 0, 0, 0
-                  # Simple hand silhouette
-                  if x > 20 and x < 100 and y > 50 and y < 90:
-                      a, r, g, b = 255, 200, 150, 100
-                  if (x > 25 and x < 40 and y > 25 and y < 55) or \
-                     (x > 45 and x < 60 and y > 25 and y < 55) or \
-                     (x > 65 and x < 80 and y > 25 and y < 55):
-                      a, r, g, b = 255, 200, 150, 100
-                  if x > 70 and x < 120 and y > 60 and y < 68:
-                      a, r, g, b = 255, 60, 60, 60
-                  if x > 70 and x < 120 and y > 68 and y < 75:
-                      a, r, g, b = 255, 100, 100, 100
-                  if x > 65 and x < 75 and y > 85 and y < 95:
-                      a, r, g, b = 255, 100, 80, 60
-                  pixels += struct.pack('<BBBB', b, g, r, a)
-          header = bytearray()
-          header += b'BM'
-          header += struct.pack('<I', 54 + len(pixels))
-          header += struct.pack('<I', 0)
-          header += struct.pack('<I', 54)
-          header += struct.pack('<I', 40)
-          header += struct.pack('<I', w)
-          header += struct.pack('<I', h)
-          header += struct.pack('<H', 1)
-          header += struct.pack('<H', 32)
-          header += struct.pack('<I', 0)
-          header += struct.pack('<I', 0)
-          header += struct.pack('<I', 0)
-          header += struct.pack('<I', 0)
-          header += struct.pack('<I', 0)
-          header += struct.pack('<I', 0)
-          with open('hand.bmp', 'wb') as f:
-              f.write(header)
-              f.write(pixels)
-          EOF
-        fi
-        
-        # Create hand2.bmp (shooting) if missing
-        if [ ! -f hand2.bmp ]; then
-          cp hand.bmp hand2.bmp
-          # Add muzzle flash (modify hand2.bmp)
-          python3 << 'EOF'
-          # Add yellow flash to hand2.bmp
-          # For simplicity, just copy hand.bmp
-          EOF
+          
+          def create_hand_bmp(filename, is_shooting):
+              w, h = 128, 128
+              pixels = bytearray()
+              
+              for y in range(h):
+                  for x in range(w):
+                      a, r, g, b = 0, 0, 0, 0
+                      
+                      # Hand silhouette
+                      if x > 20 and x < 100 and y > 50 and y < 90:
+                          a, r, g, b = 255, 200, 150, 100
+                      
+                      # Fingers
+                      if (x > 25 and x < 40 and y > 25 and y < 55) or \
+                         (x > 45 and x < 60 and y > 25 and y < 55) or \
+                         (x > 65 and x < 80 and y > 25 and y < 55):
+                          a, r, g, b = 255, 200, 150, 100
+                      
+                      # Gun barrel
+                      if x > 70 and x < 120 and y > 60 and y < 68:
+                          a, r, g, b = 255, 60, 60, 60
+                      if x > 70 and x < 120 and y > 68 and y < 75:
+                          a, r, g, b = 255, 100, 100, 100
+                      
+                      # Trigger guard
+                      if x > 65 and x < 75 and y > 85 and y < 95:
+                          a, r, g, b = 255, 100, 80, 60
+                      
+                      # Muzzle flash (shooting only)
+                      if is_shooting and x > 115 and x < 130 and y > 60 and y < 80:
+                          dist = abs(x - 122) + abs(y - 70)
+                          if dist < 15:
+                              a = 255
+                              brightness = 255 - dist * 10
+                              if brightness < 0:
+                                  brightness = 0
+                              r, g, b = 255, brightness, brightness // 2
+                      
+                      pixels += struct.pack('<BBBB', b, g, r, a)
+              
+              header = bytearray()
+              header += b'BM'
+              header += struct.pack('<I', 54 + len(pixels))
+              header += struct.pack('<I', 0)
+              header += struct.pack('<I', 54)
+              header += struct.pack('<I', 40)
+              header += struct.pack('<I', w)
+              header += struct.pack('<I', h)
+              header += struct.pack('<H', 1)
+              header += struct.pack('<H', 32)
+              header += struct.pack('<I', 0)
+              header += struct.pack('<I', 0)
+              header += struct.pack('<I', 0)
+              header += struct.pack('<I', 0)
+              header += struct.pack('<I', 0)
+              header += struct.pack('<I', 0)
+              
+              with open(filename, 'wb') as f:
+                  f.write(header)
+                  f.write(pixels)
+              
+              print(f"Created {filename}")
+          
+          create_hand_bmp('hand.bmp', False)
+          create_hand_bmp('hand2.bmp', True)
+          PYTHON_SCRIPT
         fi
         
         ls -lh hand*.bmp
     
-    - name: Package
+    - name: Create README
+      run: |
+        cat > README.txt << 'EOF'
+        ========================================
+        Wolfenstein 3D Engine
+        ========================================
+        
+        CONTROLS:
+        W - Move Forward
+        S - Move Backward
+        A - Turn Left
+        D - Turn Right
+        SPACE - Shoot!
+        ESC - Exit
+        
+        MAP LEGEND:
+        0 = Empty (walkable)
+        1 = Blue Wall
+        2 = Green Wall
+        3 = Red Wall
+        4 = Yellow Wall
+        
+        Edit wolf.c to create your own levels!
+        EOF
+        
+        ls -lh README.txt
+    
+    - name: Package everything
       run: |
         mkdir release
         cp wolf.exe release/
         cp hand.bmp release/ 2>/dev/null || echo "No hand.bmp"
         cp hand2.bmp release/ 2>/dev/null || echo "No hand2.bmp"
-        
-        cat > release/README.txt << 'EOF'
-        Wolfenstein 3D Engine
-        
-        Controls:
-        WASD - Move
-        SPACE - Shoot
-        ESC - Exit
-        
-        Walls:
-        1 = Blue
-        2 = Green
-        3 = Red
-        4 = Yellow
-        
-        Edit MAP in wolf.c to create levels!
-        EOF
+        cp README.txt release/
         
         cd release
         zip -r ../wolf3d-windows.zip *
@@ -135,7 +153,7 @@ jobs:
         echo "ZIP contents:"
         unzip -l wolf3d-windows.zip
     
-    - name: Upload
+    - name: Upload ZIP
       uses: actions/upload-artifact@v4
       with:
         name: wolf3d-windows
